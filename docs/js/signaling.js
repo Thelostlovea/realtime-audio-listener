@@ -53,15 +53,18 @@
 
     this.ws.onopen = function () {
       self.isOpen = true;
+      console.log('[信令] WebSocket 已连接');
       if (self.onOpen) self.onOpen();
     };
 
     this.ws.onclose = function () {
       self.isOpen = false;
+      console.log('[信令] WebSocket 已断开');
       if (self.onClose) self.onClose();
     };
 
     this.ws.onerror = function () {
+      console.error('[信令] WebSocket 错误');
       if (self.onError) self.onError('信令连接发生错误');
     };
 
@@ -80,12 +83,14 @@
       try {
         data = JSON.parse(ntfyMsg.message);
       } catch (e) {
+        console.warn('[信令] 无法解析消息:', ntfyMsg.message.substring(0, 100));
         return;
       }
 
       // 跳过自己发送的消息
       if (data.from === self.peerId) return;
 
+      console.log('[信令] 收到消息:', data.type, data.sdp ? '(SDP 长度:' + (typeof data.sdp === 'string' ? data.sdp.length : '?') + ')' : '');
       self._handleMessage(data);
     };
   };
@@ -98,13 +103,26 @@
     var topic = TOPIC_PREFIX + this.roomId;
     data.from = this.peerId;
 
+    var body = JSON.stringify(data);
+    console.log('[信令] 发送消息:', data.type, data.sdp ? '(SDP 长度:' + (typeof data.sdp === 'string' ? data.sdp.length : '?') + ', 总长度:' + body.length + ')' : '');
+
     try {
       var xhr = new XMLHttpRequest();
       xhr.open('POST', NTFY_HTTP_BASE + '/' + topic, true);
       xhr.setRequestHeader('Content-Type', 'text/plain');
-      xhr.send(JSON.stringify(data));
+      xhr.onload = function () {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          console.log('[信令] 发送成功:', data.type);
+        } else {
+          console.error('[信令] 发送失败 HTTP ' + xhr.status + ':', data.type);
+        }
+      };
+      xhr.onerror = function () {
+        console.error('[信令] 发送网络错误:', data.type);
+      };
+      xhr.send(body);
     } catch (e) {
-      // 静默失败，不阻断流程
+      console.error('[信令] 发送异常:', data.type, e.message);
     }
   };
 
