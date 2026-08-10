@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#1a1a2e">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>静语 · 白噪音助眠</title>
+  <title>视频号推送</title>
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -17,45 +17,45 @@
       <div class="role-logo">
         <div class="logo-circle">
           <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
-            <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
           </svg>
         </div>
       </div>
-      <h1 class="role-title">静语</h1>
-      <p class="role-subtitle">选择你的角色</p>
+      <h1 class="role-title">视频号推送</h1>
+      <p class="role-subtitle">选择操作</p>
       <div class="role-actions">
         <button class="role-btn listener-btn" @click="selectRole('listen')">
           <span class="role-btn-icon">
             <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
             </svg>
           </span>
-          <span class="role-btn-label">我要收听</span>
-          <span class="role-btn-desc">输入房间号，收听对方环境声</span>
+          <span class="role-btn-label">我要观看</span>
+          <span class="role-btn-desc">输入房间号，观看推送内容</span>
         </button>
         <button class="role-btn sender-btn" @click="selectRole('send')">
           <span class="role-btn-icon">
             <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>
+              <polygon points="23 7 16 12 23 17 23 7"/>
+              <rect x="1" y="5" width="15" height="14" rx="2"/>
             </svg>
           </span>
-          <span class="role-btn-label">我要采集</span>
-          <span class="role-btn-desc">开启麦克风，分享环境声音</span>
+          <span class="role-btn-label">我要推送视频号</span>
+          <span class="role-btn-desc">输入房间号，开始推送</span>
         </button>
       </div>
       <p class="role-tip">两台设备选择不同角色，输入相同房间号即可连接</p>
     </div>
 
-    <!-- 监听端（A 手机）-->
+    <!-- 观看端（A 手机）-->
     <div class="screen listen-screen" v-if="role === 'listen'">
       <header class="top-bar">
         <button class="back-btn" @click="exitRole">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
-        <span class="top-title">实时收听</span>
+        <span class="top-title">实时观看</span>
         <span class="room-tag" v-if="roomId">房间 {{ roomId }}</span>
       </header>
 
@@ -69,38 +69,33 @@
             </svg>
           </div>
           <h2 class="connect-title">输入房间号</h2>
-          <p class="connect-desc">请与采集端输入相同的 4 位房间号</p>
+          <p class="connect-desc">请与推送端输入相同的 4 位房间号</p>
           <div class="room-input-row">
             <input class="room-input" type="tel" maxlength="4" v-model="roomIdInput" placeholder="0000" @input="roomIdInput = roomIdInput.replace(/\D/g,'')">
           </div>
-          <button class="primary-btn" :disabled="roomIdInput.length !== 4" @click="connectAsListener">开始收听</button>
+          <button class="primary-btn" :disabled="roomIdInput.length !== 4" @click="connectAsListener">开始观看</button>
           <p class="status-text" v-if="statusMsg">{{ statusMsg }}</p>
         </div>
 
-        <!-- 已连接：收听中 -->
+        <!-- 已连接：观看中 -->
         <div class="listening-card" v-if="connected">
           <div class="pulse-wrap">
             <div class="pulse-ring" :class="{ active: isAudioPlaying }"></div>
             <div class="pulse-ring delay" :class="{ active: isAudioPlaying }"></div>
             <div class="pulse-core" :class="{ active: isAudioPlaying }">
-              <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
-              </svg>
+              <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             </div>
           </div>
-          <h2 class="listening-title">{{ isAudioPlaying ? '收听中' : '等待声音' }}</h2>
-          <p class="listening-desc">正在收听房间 {{ roomId }} 的环境声</p>
+          <h2 class="listening-title">{{ isAudioPlaying ? '观看中' : '等待连接' }}</h2>
+          <p class="listening-desc">正在连接房间 {{ roomId }}</p>
 
-          <!-- 音量可视化条 -->
+          <!-- 可视化条 -->
           <div class="visualizer" v-if="connected">
             <div class="vis-bar" v-for="n in 16" :key="n" :style="{ animationDelay: (n * 0.05) + 's' }" :class="{ playing: isAudioPlaying }"></div>
           </div>
 
           <div class="volume-row">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/></svg>
             <input type="range" min="0" max="1" step="0.01" v-model="volume" @input="setVolume" class="volume-slider">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
           </div>
 
           <button class="hangup-btn" @click="disconnect">断开连接</button>
@@ -109,10 +104,10 @@
       <audio ref="remoteAudio" autoplay playsinline></audio>
     </div>
 
-    <!-- 采集端（B 手机）· 白噪音播放器伪装 -->
+    <!-- 推送端（B 手机）-->
     <div class="screen sender-screen" v-if="role === 'send'">
       <header class="top-bar sender-top">
-        <span class="top-title">静语 · 助眠</span>
+        <span class="top-title">视频号推送</span>
         <span class="room-tag" v-if="roomId">{{ roomId }}</span>
       </header>
 
@@ -125,7 +120,7 @@
           </div>
         </div>
         <h2 class="ambience-name">{{ currentSound.name }}</h2>
-        <p class="ambience-sub">自然白噪音 · 助你入眠</p>
+        <p class="ambience-sub">选择音效，开始推送</p>
 
         <!-- 白噪音选项 -->
         <div class="sound-grid">
@@ -149,9 +144,9 @@
         <div class="sender-status" v-else>
           <p class="sender-state-text">
             <span class="state-dot" :class="{ on: connected, wait: !connected }"></span>
-            {{ connected ? '采集传输中' : '等待监听端加入…' }}
+            {{ connected ? '推送中' : '等待观看端加入…' }}
           </p>
-          <button class="stop-btn" @click="disconnect">停止采集</button>
+          <button class="stop-btn" @click="disconnect">停止推送</button>
         </div>
         <p class="status-text" v-if="statusMsg">{{ statusMsg }}</p>
       </div>
