@@ -11,11 +11,14 @@
    */
   function WebRTCHandler(options) {
     options = options || {};
-    // ICE 服务器：免费 STUN + 免费 TURN 兜底
+    // ICE 服务器：国内可用 STUN + 免费 TURN 兜底
     this.iceServers = options.iceServers || [
+      // 国内 STUN 服务器（解决 Google STUN 被墙问题）
+      { urls: 'stun:stun.miwifi.com:3478' },
+      { urls: 'stun:stun.qq.com:3478' },
+      { urls: 'stun:stun.chat.bilibili.com:3478' },
+      // Google STUN 作为备用
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
       // 免费 TURN（OpenRelay），对称型 NAT 时兜底中继
       { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
       { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
@@ -56,55 +59,74 @@
     // ICE 候选生成
     this.pc.onicecandidate = function (event) {
       if (event.candidate && self.onIceCandidate) {
-        // 只传可序列化的普通对象，避免 RTCIceCandidate 对象序列化问题
+        console.log('[WebRTC] 生成 ICE 候选:', event.candidate.candidate.substring(0, 60));
         self.onIceCandidate({
           candidate: event.candidate.candidate,
           sdpMid: event.candidate.sdpMid,
           sdpMLineIndex: event.candidate.sdpMLineIndex
         });
+      } else if (!event.candidate) {
+        console.log('[WebRTC] ICE 候选收集完成');
       }
+    };
+
+    // ICE 收集状态
+    this.pc.onicegatheringstatechange = function () {
+      console.log('[WebRTC] ICE 收集状态:', self.pc.iceGatheringState);
+    };
+
+    // ICE 连接状态
+    this.pc.oniceconnectionstatechange = function () {
+      console.log('[WebRTC] ICE 连接状态:', self.pc.iceConnectionState);
     };
 
     // 连接状态变化
     this.pc.onconnectionstatechange = function () {
+      console.log('[WebRTC] 连接状态:', self.pc.connectionState);
       if (self.onStateChange) self.onStateChange(self.pc.connectionState);
     };
 
-    // 接收远端音频流（监听端）
+    // 接收远端音频流（观看端）
     this.pc.ontrack = function (event) {
+      console.log('[WebRTC] 收到远端流');
       if (self.onRemoteStream) self.onRemoteStream(event.streams[0]);
     };
 
     return this.pc;
   };
 
-  // 监听端：创建 offer（表达接收音频意愿）
+  // 观看端：创建 offer（表达接收音频意愿）
   WebRTCHandler.prototype.createOffer = function () {
     var self = this;
+    console.log('[WebRTC] 开始创建 offer');
     return this.pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false })
       .then(function (offer) {
         return self.pc.setLocalDescription(offer);
       })
       .then(function () {
-        // 只返回 SDP 字符串，避免对象序列化问题
-        return self.pc.localDescription.sdp;
+        var sdp = self.pc.localDescription.sdp;
+        console.log('[WebRTC] offer 已创建，SDP 长度:', sdp.length);
+        return sdp;
       });
   };
 
-  // 采集端：处理 offer，附加麦克风，生成 answer
+  // 推送端：处理 offer，附加音频轨道，生成 answer
   WebRTCHandler.prototype.handleOffer = function (sdp) {
     var self = this;
     var sdpStr = _extractSdp(sdp);
     if (!sdpStr) {
+      console.error('[WebRTC] offer SDP 格式无效:', sdp);
       return Promise.reject(new Error('收到的 offer SDP 格式无效'));
     }
+    console.log('[WebRTC] 收到 offer，SDP 长度:', sdpStr.length);
     return this.pc.setRemoteDescription({ type: 'offer', sdp: sdpStr })
       .then(function () {
-        // 附加本地麦克风音频轨道
+        console.log('[WebRTC] offer 已设置');
         if (self.localStream) {
           self.localStream.getTracks().forEach(function (track) {
             self.pc.addTrack(track, self.localStream);
           });
+          console.log('[WebRTC] 已附加音频轨道');
         }
         return self.pc.createAnswer();
       })
@@ -112,26 +134,34 @@
         return self.pc.setLocalDescription(answer);
       })
       .then(function () {
-        // 只返回 SDP 字符串，避免对象序列化问题
-        return self.pc.localDescription.sdp;
+        var ansSdp = self.pc.localDescription.sdp;
+        console.log('[WebRTC] answer 已创建，SDP 长度:', ansSdp.length);
+        return ansSdp;
       });
   };
 
-  // 监听端：处理 answer
+  // 观看端：处理 answer
   WebRTCHandler.prototype.handleAnswer = function (sdp) {
     var sdpStr = _extractSdp(sdp);
     if (!sdpStr) {
+      console.error('[WebRTC] answer SDP 格式无效:', sdp);
       return Promise.reject(new Error('收到的 answer SDP 格式无效'));
     }
-    return this.pc.setRemoteDescription({ type: 'answer', sdp: sdpStr });
+    console.log('[WebRTC] 收到 answer，SDP 长度:', sdpStr.length);
+    return this.pc.setRemoteDescription({ type: 'answer', sdp: sdpStr })
+      .then(function () {
+        console.log('[WebRTC] answer 已设置');
+      });
   };
 
   WebRTCHandler.prototype.addCandidate = function (candidate) {
     var self = this;
     if (!candidate) return Promise.resolve();
     var normalized = _normalizeCandidate(candidate);
-    return this.pc.addIceCandidate(normalized).catch(function () {
-      // 候选到达过早时静默忽略，稍后会重试
+    return this.pc.addIceCandidate(normalized).then(function () {
+      console.log('[WebRTC] ICE 候选已添加');
+    }).catch(function (e) {
+      console.warn('[WebRTC] ICE 候选添加失败:', e.message);
     });
   };
 
