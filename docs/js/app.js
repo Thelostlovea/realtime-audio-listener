@@ -35,7 +35,8 @@
       signaling: null,
       webrtc: null,
       keepAliveAudio: null,
-      audioLevelTimer: null
+      audioLevelTimer: null,
+      _wakeLock: null
     },
 
     mounted: function () {
@@ -51,6 +52,14 @@
       }
       this.setupKeepAlive();
       this.setupMediaSession();
+
+      // 页面重新可见时，重新获取 Wake Lock（系统可能在后台时释放）
+      var self = this;
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible' && self._wakeLock === null) {
+          self._requestWakeLock();
+        }
+      });
     },
 
     beforeDestroy: function () {
@@ -199,6 +208,9 @@
         this.roomId = this.roomIdInput;
         this.setStatus('正在初始化…');
 
+        // 开启屏幕常亮，防止手机休眠
+        this._requestWakeLock();
+
         this.webrtc = new WebRTCHandler();
 
         // 先获取权限（用户点击触发，权限更易通过）
@@ -222,7 +234,7 @@
         };
 
         this.signaling.onJoined = function () {
-          self.setStatus('已加入房间，等待观看端…');
+          self.setStatus('已加入房间，等待热度推送…');
         };
 
         // 收到观看端的连接请求 → 开始推送
@@ -295,6 +307,29 @@
         this.currentSound = s;
       },
 
+      // ===== 屏幕常亮（Wake Lock）=====
+      _requestWakeLock: function () {
+        var self = this;
+        if (!('wakeLock' in navigator)) return;
+        navigator.wakeLock.request('screen').then(function (lock) {
+          self._wakeLock = lock;
+          console.log('[App] 屏幕常亮已开启');
+          lock.addEventListener('release', function () {
+            self._wakeLock = null;
+            console.log('[App] 屏幕常亮已释放');
+          });
+        }).catch(function (e) {
+          console.warn('[App] 屏幕常亮失败:', e.message);
+        });
+      },
+
+      _releaseWakeLock: function () {
+        if (this._wakeLock) {
+          try { this._wakeLock.release(); } catch (e) {}
+          this._wakeLock = null;
+        }
+      },
+
       // ===== 后台保活 =====
       setupKeepAlive: function () {
         // 持续播放一段静音音频，防止页面被系统挂起
@@ -334,6 +369,11 @@
       },
 
       cleanup: function () {
+        if (this._connectTimer) {
+          clearTimeout(this._connectTimer);
+          this._connectTimer = null;
+        }
+        this._releaseWakeLock();
         if (this.signaling) {
           this.signaling.close();
           this.signaling = null;
