@@ -5,15 +5,8 @@
   'use strict';
 
   // ====== 部署配置 ======
-  // 本地调试用 ws://localhost:8080
-  // 部署后请把下面地址替换为你的 Render 信令服务器地址（wss://xxx.onrender.com）
-  var SIGNALING_SERVER_URL = (function () {
-    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-      return 'ws://localhost:8080';
-    }
-    // ⚠️ 部署后替换为你的信令服务器地址
-    return 'wss://audio-listener-signaling.onrender.com';
-  })();
+  // 使用 ntfy.sh 免费公共信令服务，无需自建后端服务器
+  // 信令通道通过 WebSocket 订阅 + HTTP POST 发布实现
 
   new Vue({
     el: '#app',
@@ -87,7 +80,8 @@
         this.setStatus('正在连接服务器…');
 
         this.webrtc = new WebRTCHandler();
-        this.signaling = new SignalingClient(SIGNALING_SERVER_URL);
+        this.signaling = new SignalingClient();
+        this.signaling.roomId = this.roomId;
         this._bindSignalingListener();
 
         this.signaling.connect();
@@ -197,7 +191,8 @@
         // 先获取麦克风（用户点击触发，权限更易通过）
         this.webrtc.startLocalStream().then(function () {
           self.setStatus('麦克风已就绪，连接服务器…');
-          self.signaling = new SignalingClient(SIGNALING_SERVER_URL);
+          self.signaling = new SignalingClient();
+          self.signaling.roomId = self.roomId;
           self._bindSignalingSender();
           self.signaling.connect();
         }).catch(function (err) {
