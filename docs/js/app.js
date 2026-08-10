@@ -53,11 +53,33 @@
       this.setupKeepAlive();
       this.setupMediaSession();
 
-      // 页面重新可见时，重新获取 Wake Lock（系统可能在后台时释放）
+      // 页面可见性变化处理
       var self = this;
       document.addEventListener('visibilitychange', function () {
-        if (document.visibilityState === 'visible' && self._wakeLock === null) {
-          self._requestWakeLock();
+        if (document.visibilityState === 'visible') {
+          // 页面回到前台：重新获取 Wake Lock
+          if (self._wakeLock === null) {
+            self._requestWakeLock();
+          }
+          // 如果之前已连接但现在断了，尝试提示用户
+          if (self.role && self.roomId && !self.connected) {
+            self.setStatus('页面回到前台，正在重新连接…');
+            // 延迟 1 秒让浏览器恢复状态
+            setTimeout(function () {
+              if (!self.connected && self.role === 'send') {
+                self.cleanup();
+                self.connectAsSender();
+              } else if (!self.connected && self.role === 'listen') {
+                self.cleanup();
+                self.connectAsListener();
+              }
+            }, 1000);
+          }
+        } else {
+          // 页面切到后台：提示用户
+          if (self.connected) {
+            console.warn('[App] 页面进入后台，连接可能中断');
+          }
         }
       });
     },
