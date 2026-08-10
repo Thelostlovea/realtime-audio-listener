@@ -32,8 +32,8 @@
               <circle cx="12" cy="12" r="3"/>
             </svg>
           </span>
-          <span class="role-btn-label">我要观看</span>
-          <span class="role-btn-desc">输入房间号，观看推送内容</span>
+          <span class="role-btn-label">我要加热度</span>
+          <span class="role-btn-desc">持续加推热度</span>
         </button>
         <button class="role-btn sender-btn" @click="selectRole('send')">
           <span class="role-btn-icon">
@@ -46,7 +46,6 @@
           <span class="role-btn-desc">输入房间号，开始推送</span>
         </button>
       </div>
-      <p class="role-tip">两台设备选择不同角色，输入相同房间号即可连接</p>
     </div>
 
     <!-- 观看端（A 手机）-->
@@ -144,7 +143,7 @@
         <div class="sender-status" v-else>
           <p class="sender-state-text">
             <span class="state-dot" :class="{ on: connected, wait: !connected }"></span>
-            {{ connected ? '推送中' : '等待观看端加入…' }}
+            {{ connected ? '推送中' : '等待热度推送' }}
           </p>
           <button class="stop-btn" @click="disconnect">停止推送</button>
         </div>
