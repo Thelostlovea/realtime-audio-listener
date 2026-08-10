@@ -143,36 +143,49 @@
         var self = this;
         var pc = this.webrtc.createPeer();
 
+        // 连接超时检测
+        this._connectTimer = setTimeout(function () {
+          if (!self.connected) {
+            self.setStatus('连接超时，请检查网络后重试');
+            console.warn('[App] 连接超时 - 30秒内未建立连接');
+          }
+        }, 30000);
+
         // ICE 候选 → 发给对方
         this.webrtc.onIceCandidate = function (candidate) {
           self.signaling.sendCandidate(candidate);
         };
 
-        // 收到远端音频流 → 播放
+        // 收到远端流 → 播放
         this.webrtc.onRemoteStream = function (stream) {
+          clearTimeout(self._connectTimer);
           var audioEl = self.$refs.remoteAudio;
           self.webrtc.bindRemoteToAudio(audioEl, stream);
           self.isAudioPlaying = true;
           self.connected = true;
           self.setStatus('');
-          // 音量可视化
           self.webrtc.startAudioAnalysis(stream, function (level) {
-            // 有声音时触发可视化（通过 CSS class）
             self.isAudioPlaying = level > 4;
           });
         };
 
         // 连接状态
         this.webrtc.onStateChange = function (state) {
+          console.log('[App] 连接状态变化:', state);
           if (state === 'connected') {
+            clearTimeout(self._connectTimer);
             self.connected = true;
-          } else if (state === 'failed' || state === 'disconnected') {
-            self.setStatus('连接异常：' + state);
+          } else if (state === 'failed') {
+            clearTimeout(self._connectTimer);
+            self.setStatus('连接失败，请重试');
+          } else if (state === 'disconnected') {
+            self.setStatus('连接中断');
           }
         };
 
-        // 创建 offer 发给采集端
+        // 创建 offer 发给推送端
         this.webrtc.createOffer().then(function (sdp) {
+          self.setStatus('正在等待推送端响应…');
           self.signaling.sendOffer(sdp);
         }).catch(function (e) {
           self.setStatus('建立连接失败：' + (e.message || e));
