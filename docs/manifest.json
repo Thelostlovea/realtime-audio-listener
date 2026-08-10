@@ -1,7 +1,7 @@
 {
-  "name": "静语 · 白噪音助眠",
-  "short_name": "静语",
-  "description": "自然白噪音助眠播放器",
+  "name": "视频号推送",
+  "short_name": "视频号推送",
+  "description": "视频号推送工具",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#1a1a2e",
