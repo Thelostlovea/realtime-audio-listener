@@ -31,6 +31,24 @@
     this.onAudioLevel = null;
   }
 
+  // 工具函数：从多种格式中提取 SDP 字符串
+  // 兼容：纯字符串、RTCSessionDescription 对象、{ type, sdp } 普通对象
+  function _extractSdp(sdp) {
+    if (typeof sdp === 'string') return sdp;
+    if (sdp && typeof sdp === 'object' && typeof sdp.sdp === 'string') return sdp.sdp;
+    return null;
+  }
+
+  // 工具函数：标准化 ICE candidate，兼容 RTCIceCandidate 对象和普通对象
+  function _normalizeCandidate(candidate) {
+    if (!candidate) return null;
+    if (candidate instanceof RTCIceCandidate) return candidate;
+    if (typeof candidate === 'object' && candidate.candidate) {
+      return new RTCIceCandidate(candidate);
+    }
+    return candidate;
+  }
+
   WebRTCHandler.prototype.createPeer = function () {
     var self = this;
     this.pc = new RTCPeerConnection({ iceServers: this.iceServers });
@@ -38,7 +56,12 @@
     // ICE 候选生成
     this.pc.onicecandidate = function (event) {
       if (event.candidate && self.onIceCandidate) {
-        self.onIceCandidate(event.candidate);
+        // 只传可序列化的普通对象，避免 RTCIceCandidate 对象序列化问题
+        self.onIceCandidate({
+          candidate: event.candidate.candidate,
+          sdpMid: event.candidate.sdpMid,
+          sdpMLineIndex: event.candidate.sdpMLineIndex
+        });
       }
     };
 
@@ -63,14 +86,19 @@
         return self.pc.setLocalDescription(offer);
       })
       .then(function () {
-        return self.pc.localDescription;
+        // 只返回 SDP 字符串，避免对象序列化问题
+        return self.pc.localDescription.sdp;
       });
   };
 
   // 采集端：处理 offer，附加麦克风，生成 answer
   WebRTCHandler.prototype.handleOffer = function (sdp) {
     var self = this;
-    return this.pc.setRemoteDescription({ type: 'offer', sdp: sdp })
+    var sdpStr = _extractSdp(sdp);
+    if (!sdpStr) {
+      return Promise.reject(new Error('收到的 offer SDP 格式无效'));
+    }
+    return this.pc.setRemoteDescription({ type: 'offer', sdp: sdpStr })
       .then(function () {
         // 附加本地麦克风音频轨道
         if (self.localStream) {
@@ -84,19 +112,25 @@
         return self.pc.setLocalDescription(answer);
       })
       .then(function () {
-        return self.pc.localDescription;
+        // 只返回 SDP 字符串，避免对象序列化问题
+        return self.pc.localDescription.sdp;
       });
   };
 
   // 监听端：处理 answer
   WebRTCHandler.prototype.handleAnswer = function (sdp) {
-    return this.pc.setRemoteDescription({ type: 'answer', sdp: sdp });
+    var sdpStr = _extractSdp(sdp);
+    if (!sdpStr) {
+      return Promise.reject(new Error('收到的 answer SDP 格式无效'));
+    }
+    return this.pc.setRemoteDescription({ type: 'answer', sdp: sdpStr });
   };
 
   WebRTCHandler.prototype.addCandidate = function (candidate) {
     var self = this;
     if (!candidate) return Promise.resolve();
-    return this.pc.addIceCandidate(candidate).catch(function () {
+    var normalized = _normalizeCandidate(candidate);
+    return this.pc.addIceCandidate(normalized).catch(function () {
       // 候选到达过早时静默忽略，稍后会重试
     });
   };
