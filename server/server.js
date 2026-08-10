@@ -8,6 +8,7 @@
  * 启动：npm start （端口取自环境变量 process.env.PORT，默认 8080）
  */
 
+const http = require('http');
 const WebSocket = require('ws');
 
 // 服务端口（Render 等平台通过环境变量注入端口，必须读取 process.env.PORT）
@@ -189,11 +190,30 @@ function handleLeave(ws, roomId) {
   ws.__role = null;
 }
 
-// ==================== WebSocket 服务 ====================
+// ==================== HTTP + WebSocket 服务 ====================
 
-const wss = new WebSocket.Server({ port: PORT }, () => {
+// 创建 HTTP 服务器，处理健康检查请求
+const server = http.createServer((req, res) => {
+  if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: 'ok',
+      service: 'audio-listener-signaling',
+      rooms: rooms.size,
+      uptime: process.uptime()
+    }));
+  } else {
+    res.writeHead(404);
+    res.end('Not Found');
+  }
+});
+
+// 将 WebSocket 服务器附加到 HTTP 服务器
+const wss = new WebSocket.Server({ server });
+
+server.listen(PORT, () => {
   console.log(`[信令服务器] 已启动，监听端口 ${PORT}`);
-  console.log('[信令服务器] 协议：WebSocket(JSON)，单向音频监听（listener 收听 / sender 采集）');
+  console.log('[信令服务器] 协议：HTTP + WebSocket(JSON)，单向音频监听（listener 收听 / sender 采集）');
 });
 
 wss.on('connection', (ws) => {
