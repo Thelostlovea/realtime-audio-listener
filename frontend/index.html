@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>静语 · 白噪音助眠</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 角色选择页 -->
+    <div class="screen role-screen" v-if="!role">
+      <div class="role-logo">
+        <div class="logo-circle">
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+            <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+          </svg>
+        </div>
+      </div>
+      <h1 class="role-title">静语</h1>
+      <p class="role-subtitle">选择你的角色</p>
+      <div class="role-actions">
+        <button class="role-btn listener-btn" @click="selectRole('listen')">
+          <span class="role-btn-icon">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+          </span>
+          <span class="role-btn-label">我要收听</span>
+          <span class="role-btn-desc">输入房间号，收听对方环境声</span>
+        </button>
+        <button class="role-btn sender-btn" @click="selectRole('send')">
+          <span class="role-btn-icon">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>
+            </svg>
+          </span>
+          <span class="role-btn-label">我要采集</span>
+          <span class="role-btn-desc">开启麦克风，分享环境声音</span>
+        </button>
+      </div>
+      <p class="role-tip">两台设备选择不同角色，输入相同房间号即可连接</p>
+    </div>
+
+    <!-- 监听端（A 手机）-->
+    <div class="screen listen-screen" v-if="role === 'listen'">
+      <header class="top-bar">
+        <button class="back-btn" @click="exitRole">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span class="top-title">实时收听</span>
+        <span class="room-tag" v-if="roomId">房间 {{ roomId }}</span>
+      </header>
+
+      <div class="listen-body">
+        <!-- 未连接：输入房间号 -->
+        <div class="connect-card" v-if="!connected">
+          <div class="connect-icon">
+            <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+          </div>
+          <h2 class="connect-title">输入房间号</h2>
+          <p class="connect-desc">请与采集端输入相同的 4 位房间号</p>
+          <div class="room-input-row">
+            <input class="room-input" type="tel" maxlength="4" v-model="roomIdInput" placeholder="0000" @input="roomIdInput = roomIdInput.replace(/\D/g,'')">
+          </div>
+          <button class="primary-btn" :disabled="roomIdInput.length !== 4" @click="connectAsListener">开始收听</button>
+          <p class="status-text" v-if="statusMsg">{{ statusMsg }}</p>
+        </div>
+
+        <!-- 已连接：收听中 -->
+        <div class="listening-card" v-if="connected">
+          <div class="pulse-wrap">
+            <div class="pulse-ring" :class="{ active: isAudioPlaying }"></div>
+            <div class="pulse-ring delay" :class="{ active: isAudioPlaying }"></div>
+            <div class="pulse-core" :class="{ active: isAudioPlaying }">
+              <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+              </svg>
+            </div>
+          </div>
+          <h2 class="listening-title">{{ isAudioPlaying ? '收听中' : '等待声音' }}</h2>
+          <p class="listening-desc">正在收听房间 {{ roomId }} 的环境声</p>
+
+          <!-- 音量可视化条 -->
+          <div class="visualizer" v-if="connected">
+            <div class="vis-bar" v-for="n in 16" :key="n" :style="{ animationDelay: (n * 0.05) + 's' }" :class="{ playing: isAudioPlaying }"></div>
+          </div>
+
+          <div class="volume-row">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/></svg>
+            <input type="range" min="0" max="1" step="0.01" v-model="volume" @input="setVolume" class="volume-slider">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          </div>
+
+          <button class="hangup-btn" @click="disconnect">断开连接</button>
+        </div>
+      </div>
+      <audio ref="remoteAudio" autoplay playsinline></audio>
+    </div>
+
+    <!-- 采集端（B 手机）· 白噪音播放器伪装 -->
+    <div class="screen sender-screen" v-if="role === 'send'">
+      <header class="top-bar sender-top">
+        <span class="top-title">静语 · 助眠</span>
+        <span class="room-tag" v-if="roomId">{{ roomId }}</span>
+      </header>
+
+      <div class="sender-body">
+        <!-- 伪装的白噪音播放器界面 -->
+        <div class="ambience-cover">
+          <div class="ambience-orb" :class="{ playing: ambiencePlaying }">
+            <div class="orb-inner"></div>
+            <div class="orb-ring"></div>
+          </div>
+        </div>
+        <h2 class="ambience-name">{{ currentSound.name }}</h2>
+        <p class="ambience-sub">自然白噪音 · 助你入眠</p>
+
+        <!-- 白噪音选项 -->
+        <div class="sound-grid">
+          <button class="sound-chip" v-for="s in sounds" :key="s.id" :class="{ active: currentSound.id === s.id }" @click="switchSound(s)">
+            <span class="sound-emoji">{{ s.emoji }}</span>
+            <span class="sound-name">{{ s.name }}</span>
+          </button>
+        </div>
+
+        <!-- 播放控制 -->
+        <button class="play-btn" @click="toggleAmbience">
+          <svg v-if="!ambiencePlaying" viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <svg v-else viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        </button>
+
+        <!-- 房间号输入/状态 -->
+        <div class="sender-status" v-if="!roomId">
+          <input class="room-input sender-room-input" type="tel" maxlength="4" v-model="roomIdInput" placeholder="输入4位房间号" @input="roomIdInput = roomIdInput.replace(/\D/g,'')">
+          <button class="primary-btn" :disabled="roomIdInput.length !== 4" @click="connectAsSender">开始</button>
+        </div>
+        <div class="sender-status" v-else>
+          <p class="sender-state-text">
+            <span class="state-dot" :class="{ on: connected, wait: !connected }"></span>
+            {{ connected ? '采集传输中' : '等待监听端加入…' }}
+          </p>
+          <button class="stop-btn" @click="disconnect">停止采集</button>
+        </div>
+        <p class="status-text" v-if="statusMsg">{{ statusMsg }}</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@2.7.16/dist/vue.min.js"></script>
+  <script src="js/signaling.js"></script>
+  <script src="js/webrtc.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

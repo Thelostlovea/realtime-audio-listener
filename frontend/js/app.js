@@ -1,0 +1,341 @@
+/* global Vue, SignalingClient, WebRTCHandler */
+/* eslint-disable no-new */
+
+(function () {
+  'use strict';
+
+  // ====== 部署配置 ======
+  // 本地调试用 ws://localhost:8080
+  // 部署后请把下面地址替换为你的 Render 信令服务器地址（wss://xxx.onrender.com）
+  var SIGNALING_SERVER_URL = (function () {
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      return 'ws://localhost:8080';
+    }
+    // ⚠️ 部署后替换为你的信令服务器地址
+    return 'wss://audio-listener-signaling.onrender.com';
+  })();
+
+  new Vue({
+    el: '#app',
+    data: {
+      // 角色与连接状态
+      role: null,              // null | 'listen' | 'send'
+      roomId: null,            // 已确认的房间号
+      roomIdInput: '',         // 输入中的房间号
+      connected: false,        // WebRTC 是否建立
+      statusMsg: '',
+      volume: 1,
+      isAudioPlaying: false,
+
+      // 白噪音播放器伪装界面
+      ambiencePlaying: false,
+      currentSound: { id: 'rain', name: '雨声', emoji: '🌧️' },
+      sounds: [
+        { id: 'rain', name: '雨声', emoji: '🌧️' },
+        { id: 'ocean', name: '海浪', emoji: '🌊' },
+        { id: 'forest', name: '森林', emoji: '🌲' },
+        { id: 'fire', name: '篝火', emoji: '🔥' },
+        { id: 'wind', name: '微风', emoji: '🍃' }
+      ],
+
+      // 内部对象（非响应式用途）
+      signaling: null,
+      webrtc: null,
+      keepAliveAudio: null,
+      audioLevelTimer: null
+    },
+
+    mounted: function () {
+      // 解析 URL 参数，支持 ?role=listen&room=1234 直接进入
+      var params = new URLSearchParams(location.search);
+      var r = params.get('role');
+      var room = params.get('room');
+      if (r === 'listen' || r === 'send') {
+        this.role = r;
+      }
+      if (room) {
+        this.roomIdInput = room;
+      }
+      this.setupKeepAlive();
+      this.setupMediaSession();
+    },
+
+    beforeDestroy: function () {
+      this.cleanup();
+    },
+
+    methods: {
+      // ===== 角色选择 =====
+      selectRole: function (r) {
+        this.role = r;
+      },
+
+      exitRole: function () {
+        this.cleanup();
+        this.role = null;
+        this.roomId = null;
+        this.roomIdInput = '';
+        this.connected = false;
+        this.statusMsg = '';
+      },
+
+      // ===== 监听端（A 手机）：创建房间，等待对方 =====
+      connectAsListener: function () {
+        if (this.roomIdInput.length !== 4) return;
+        var self = this;
+        this.roomId = this.roomIdInput;
+        this.setStatus('正在连接服务器…');
+
+        this.webrtc = new WebRTCHandler();
+        this.signaling = new SignalingClient(SIGNALING_SERVER_URL);
+        this._bindSignalingListener();
+
+        this.signaling.connect();
+      },
+
+      _bindSignalingListener: function () {
+        var self = this;
+
+        this.signaling.onOpen = function () {
+          self.setStatus('已连接服务器，创建房间…');
+          self.signaling.create(self.roomId);
+        };
+
+        this.signaling.onCreated = function () {
+          self.setStatus('房间 ' + self.roomId + ' 已创建，等待采集端加入…');
+        };
+
+        // 采集端加入，开始 WebRTC 协商
+        this.signaling.onPeerJoined = function () {
+          self.setStatus('采集端已加入，正在建立连接…');
+          self._startListenerNegotiation();
+        };
+
+        this.signaling.onAnswer = function (sdp) {
+          if (self.webrtc) {
+            self.webrtc.handleAnswer(sdp).catch(function (e) {
+              self.setStatus('连接失败：' + (e.message || e));
+            });
+          }
+        };
+
+        this.signaling.onCandidate = function (candidate) {
+          if (self.webrtc) self.webrtc.addCandidate(candidate);
+        };
+
+        this.signaling.onPeerLeft = function () {
+          self.setStatus('对方已离开');
+          self.connected = false;
+          self.isAudioPlaying = false;
+        };
+
+        this.signaling.onError = function (msg) {
+          self.setStatus(msg);
+        };
+
+        this.signaling.onSignalingError = function (msg) {
+          self.setStatus('服务器：' + msg);
+        };
+
+        this.signaling.onClose = function () {
+          if (self.connected) {
+            self.setStatus('连接已断开');
+            self.connected = false;
+          }
+        };
+      },
+
+      _startListenerNegotiation: function () {
+        var self = this;
+        var pc = this.webrtc.createPeer();
+
+        // ICE 候选 → 发给对方
+        this.webrtc.onIceCandidate = function (candidate) {
+          self.signaling.sendCandidate(candidate);
+        };
+
+        // 收到远端音频流 → 播放
+        this.webrtc.onRemoteStream = function (stream) {
+          var audioEl = self.$refs.remoteAudio;
+          self.webrtc.bindRemoteToAudio(audioEl, stream);
+          self.isAudioPlaying = true;
+          self.connected = true;
+          self.setStatus('');
+          // 音量可视化
+          self.webrtc.startAudioAnalysis(stream, function (level) {
+            // 有声音时触发可视化（通过 CSS class）
+            self.isAudioPlaying = level > 4;
+          });
+        };
+
+        // 连接状态
+        this.webrtc.onStateChange = function (state) {
+          if (state === 'connected') {
+            self.connected = true;
+          } else if (state === 'failed' || state === 'disconnected') {
+            self.setStatus('连接异常：' + state);
+          }
+        };
+
+        // 创建 offer 发给采集端
+        this.webrtc.createOffer().then(function (sdp) {
+          self.signaling.sendOffer(sdp);
+        }).catch(function (e) {
+          self.setStatus('建立连接失败：' + (e.message || e));
+        });
+      },
+
+      // ===== 采集端（B 手机）：加入房间，采集麦克风 =====
+      connectAsSender: function () {
+        if (this.roomIdInput.length !== 4) return;
+        var self = this;
+        this.roomId = this.roomIdInput;
+        this.setStatus('正在请求麦克风权限…');
+
+        this.webrtc = new WebRTCHandler();
+
+        // 先获取麦克风（用户点击触发，权限更易通过）
+        this.webrtc.startLocalStream().then(function () {
+          self.setStatus('麦克风已就绪，连接服务器…');
+          self.signaling = new SignalingClient(SIGNALING_SERVER_URL);
+          self._bindSignalingSender();
+          self.signaling.connect();
+        }).catch(function (err) {
+          self.setStatus('麦克风权限被拒绝：' + (err.message || err));
+        });
+      },
+
+      _bindSignalingSender: function () {
+        var self = this;
+
+        this.signaling.onOpen = function () {
+          self.setStatus('加入房间 ' + self.roomId + '…');
+          self.signaling.join(self.roomId);
+        };
+
+        this.signaling.onJoined = function () {
+          self.setStatus('已加入房间，等待监听端…');
+        };
+
+        // 收到监听端的 offer → 创建 answer（附加麦克风）
+        this.signaling.onOffer = function (sdp) {
+          self.setStatus('监听端已连接，正在传输…');
+          var pc = self.webrtc.createPeer();
+
+          self.webrtc.onIceCandidate = function (candidate) {
+            self.signaling.sendCandidate(candidate);
+          };
+
+          self.webrtc.onStateChange = function (state) {
+            if (state === 'connected') {
+              self.connected = true;
+              self.setStatus('');
+            } else if (state === 'failed' || state === 'disconnected') {
+              self.setStatus('传输异常：' + state);
+              self.connected = false;
+            }
+          };
+
+          self.webrtc.handleOffer(sdp).then(function (answerSdp) {
+            self.signaling.sendAnswer(answerSdp);
+            self.connected = true;
+          }).catch(function (e) {
+            self.setStatus('建立连接失败：' + (e.message || e));
+          });
+        };
+
+        this.signaling.onCandidate = function (candidate) {
+          if (self.webrtc) self.webrtc.addCandidate(candidate);
+        };
+
+        this.signaling.onPeerLeft = function () {
+          self.setStatus('监听端已离开');
+          self.connected = false;
+        };
+
+        this.signaling.onError = function (msg) {
+          self.setStatus(msg);
+        };
+
+        this.signaling.onSignalingError = function (msg) {
+          self.setStatus('服务器：' + msg);
+        };
+      },
+
+      // ===== 断开 =====
+      disconnect: function () {
+        this.cleanup();
+        this.connected = false;
+        this.isAudioPlaying = false;
+        this.roomId = null;
+        this.setStatus('已断开');
+      },
+
+      // ===== 音量 =====
+      setVolume: function () {
+        if (this.$refs.remoteAudio) {
+          this.$refs.remoteAudio.volume = parseFloat(this.volume);
+        }
+      },
+
+      // ===== 白噪音伪装界面交互（纯视觉） =====
+      toggleAmbience: function () {
+        this.ambiencePlaying = !this.ambiencePlaying;
+      },
+
+      switchSound: function (s) {
+        this.currentSound = s;
+      },
+
+      // ===== 后台保活 =====
+      setupKeepAlive: function () {
+        // 持续播放一段静音音频，防止页面被系统挂起
+        try {
+          var silent = document.createElement('audio');
+          silent.loop = true;
+          silent.setAttribute('playsinline', '');
+          // 极短的静音 wav
+          silent.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+          this.keepAliveAudio = silent;
+        } catch (e) {}
+      },
+
+      playKeepAlive: function () {
+        if (this.keepAliveAudio) {
+          var p = this.keepAliveAudio.play();
+          if (p && p.catch) p.catch(function () {});
+        }
+      },
+
+      setupMediaSession: function () {
+        // 声明媒体会话，系统视为正在播放媒体，提升后台优先级
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: '静语 · 助眠中',
+            artist: '静语',
+            album: '白噪音'
+          });
+          navigator.mediaSession.setActionHandler('play', function () {});
+          navigator.mediaSession.setActionHandler('pause', function () {});
+        }
+      },
+
+      // ===== 工具方法 =====
+      setStatus: function (msg) {
+        this.statusMsg = msg || '';
+      },
+
+      cleanup: function () {
+        if (this.signaling) {
+          this.signaling.close();
+          this.signaling = null;
+        }
+        if (this.webrtc) {
+          this.webrtc.close();
+          this.webrtc = null;
+        }
+        this.playKeepAlive(); // 触发一次保活
+      }
+    }
+  });
+})();
